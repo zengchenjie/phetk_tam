@@ -1,42 +1,44 @@
-# This is a GitHub Action workflow to automatically sync a fork with its upstream repository.
-
-name: Sync Fork
+name: Sync Fork (Safe FF)
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # This runs the job every hour. You can change this.
-  workflow_dispatch:      # This allows you to run the workflow manually from the Actions tab.
+    # Runs daily at 00:00 UTC.
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout your fork
+      - name: Checkout fork
         uses: actions/checkout@v4
         with:
-          # We need to fetch all history and branches.
-          fetch-depth: 0 
-          # This is your personal access token, which is required to push changes back to your fork.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          # Create this secret with a fine-grained PAT that has Contents: Read & write.
+          # If upstream updates workflow files, include Workflows: Read & write too.
+          token: ${{ secrets.FORK_SYNC_TOKEN }}
 
-      - name: Configure Git
+      - name: Configure Git identity
         run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Add upstream remote and fetch
+      - name: Sync main from upstream (fast-forward only)
+        shell: bash
         run: |
-          # Replace this URL with the URL of the original repository.
+          set -euo pipefail
+
           git remote add upstream https://github.com/nhgritctran/PheTK.git
-          git fetch upstream
+          git fetch upstream main
 
-      - name: Merge changes from upstream/main
-        run: |
-          # This assumes the default branch is 'main'. Change to 'master' or another branch name if needed.
           git checkout main
-          git merge upstream/main
-      
-      - name: Push changes to your fork
-        run: |
-          # This will push the updates to your fork on GitHub.
-          git push origin main
+          # Safe sync: only advances fork if it can be fast-forwarded.
+          # This avoids destructive force-pushes.
+          git merge --ff-only upstream/main
+
+      - name: Push updated main
+        run: git push origin main
